@@ -251,12 +251,10 @@ void WM_WindowHandler_RunLoop(Display *dpy) {
         
             if (WM_Window_IsDecoratable(display, client)) {
                 if (FindFrame(client) == None) {
-                    // Sync before framing so client has reported its real size
-                    XSync(display, False);
+                    // REMOVED: XSync(display, False); ← this was causing the delay
                     Window frame = WM_Window_CreateFrame(display, client);
                     if (frame) {
                         AddClient(client, frame);
-                        // Map frame last — client is already mapped inside CreateFrame
                         XMapWindow(display, frame);
                         XMapRaised(display, frame);
                     }
