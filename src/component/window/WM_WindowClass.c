@@ -281,10 +281,37 @@ Window WM_Window_CreateFrame(Display *dpy, Window client_win) {
     XWindowAttributes attr;
     if (!XGetWindowAttributes(dpy, client_win, &attr)) return 0;
 
+    // If the client reports a tiny size at map time, check size hints
+    int client_w = attr.width;
+    int client_h = attr.height;
+
+    if (client_w < 50 || client_h < 50) {
+        XSizeHints hints;
+        long supplied;
+        if (XGetWMNormalHints(dpy, client_win, &hints, &supplied)) {
+            if ((hints.flags & PSize) && hints.width > 50 && hints.height > 50) {
+                client_w = hints.width;
+                client_h = hints.height;
+            } else if ((hints.flags & PBaseSize) && hints.base_width > 50) {
+                client_w = hints.base_width;
+                client_h = hints.base_height;
+            } else {
+                // Fallback default size
+                client_w = 640;
+                client_h = 480;
+            }
+        } else {
+            client_w = 640;
+            client_h = 480;
+        }
+        // Resize the client to match
+        XResizeWindow(dpy, client_win, client_w, client_h);
+    }
+
     int fx = attr.x - 2;
     int fy = attr.y - 2;
-    int fw = attr.width  + 4;
-    int fh = attr.height + TITLEBAR_HEIGHT + 4;
+    int fw = client_w + 4;
+    int fh = client_h + TITLEBAR_HEIGHT + 4;
 
     Colormap cmap = DefaultColormap(dpy, DefaultScreen(dpy));
     XColor bg_col, accent_col;
