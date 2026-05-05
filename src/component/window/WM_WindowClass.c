@@ -472,14 +472,22 @@ void WM_Window_HandleEvents(Display *dpy, XEvent *event) {
     }
 
     case DestroyNotify: {
-        /*
-         * The client window was destroyed — clean up its decoration.
-         * WM_WindowHandlerClass will also call RemoveClient() to tidy
-         * up _NET_CLIENT_LIST; the two paths are independent and safe
-         * because RemoveManagedWindow does NOT touch _NET_CLIENT_LIST,
-         * and RemoveClient does NOT touch the ManagedWindow linked list.
-         */
-        ManagedWindow *mw = FindByClient(event->xdestroywindow.window);
+        Window destroyed = event->xdestroywindow.window;
+
+        // Check if it's a client window
+        ManagedWindow *mw = FindByClient(destroyed);
+        if (mw) {
+            RemoveManagedWindow(dpy, mw);
+            break;
+        }
+
+        // Check if it's a frame or titlebar (shouldn't happen but handle it)
+        mw = FindByFrame(destroyed);
+        if (!mw) {
+            for (ManagedWindow *w = managed_windows; w; w = w->next) {
+                if (w->title_bar == destroyed) { mw = w; break; }
+            }
+        }
         if (mw) RemoveManagedWindow(dpy, mw);
         break;
     }
@@ -488,20 +496,29 @@ void WM_Window_HandleEvents(Display *dpy, XEvent *event) {
         Window uw = event->xunmap.window;
         ManagedWindow *mw = FindByClient(uw);
         if (!mw) break;
-
-        /* Only remove if the client is entering WithdrawnState */
-        Atom wm_state = XInternAtom(dpy, "WM_STATE", True);
-        if (wm_state == None) break;
-
-        Atom at; int af; unsigned long n, ba;
-        unsigned char *prop = NULL;
-        if (XGetWindowProperty(dpy, uw, wm_state, 0, 2, False,
-                               AnyPropertyType, &at, &af, &n, &ba,
-                               &prop) == Success && prop) {
-            long state = *(long *)prop;
-            XFree(prop);
-            if (state == WithdrawnState)
-                RemoveManagedWindow(dpy, mw);
+    
+        // Always clean up on unmap — don't wait for WM_STATE
+        // Some apps (dialogs, pcmanfm) never set WithdrawnState
+        // but still expect the frame to be gone
+        XWindowAttributes attr;
+        if (XGetWindowAttributes(dpy, uw, &attr)) {
+            // Window still exists but is unmapping — check WM_STATE
+            Atom wm_state = XInternAtom(dpy, "WM_STATE", True);
+            if (wm_state != None) {
+                Atom at; int af; unsigned long n, ba;
+                unsigned char *prop = NULL;
+                if (XGetWindowProperty(dpy, uw, wm_state, 0, 2, False,
+                                       AnyPropertyType, &at, &af, &n, &ba,
+                                       &prop) == Success && prop) {
+                    long state = *(long *)prop;
+                    XFree(prop);
+                    if (state == WithdrawnState)
+                        RemoveManagedWindow(dpy, mw);
+                }
+            }
+        } else {
+            // XGetWindowAttributes failed — window is already gone, clean up
+            RemoveManagedWindow(dpy, mw);
         }
         break;
     }

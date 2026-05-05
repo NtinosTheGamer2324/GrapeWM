@@ -124,8 +124,6 @@ static void RemoveClient(Window win) {
     ssize_t idx = FindClientIndex(win);
     if (idx < 0) return;
 
-    // Only destroy frame if it still exists AND it wasn't already
-    // destroyed by WM_WindowClass's RemoveManagedWindow
     Window frame = managed_clients[idx].frame;
     if (frame != None) {
         XWindowAttributes attr;
@@ -149,6 +147,7 @@ static void RemoveClient(Window win) {
     }
 
     UpdateClientList();
+    XSync(display, False);  // flush after removal to catch any pending errors
 }
 
 /* ------------------------------------------------------------------ */
