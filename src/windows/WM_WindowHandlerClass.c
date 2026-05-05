@@ -124,18 +124,17 @@ static void RemoveClient(Window win) {
     ssize_t idx = FindClientIndex(win);
     if (idx < 0) return;
 
-    /* Destroy frame if it still exists.
-       WM_WindowClass already destroys its own ManagedWindow entry
-       (title bar + frame) via DestroyNotify → WM_Window_RemoveManagedWindow.
-       We only need to guard against the case where the frame was stored here
-       but WM_WindowClass never saw a DestroyNotify for it. */
+    // Only destroy frame if it still exists AND it wasn't already
+    // destroyed by WM_WindowClass's RemoveManagedWindow
     Window frame = managed_clients[idx].frame;
-    if (frame != None && WindowExists(display, frame)) {
-        XUnmapWindow(display, frame);
-        XDestroyWindow(display, frame);
+    if (frame != None) {
+        XWindowAttributes attr;
+        if (XGetWindowAttributes(display, frame, &attr)) {
+            XUnmapWindow(display, frame);
+            XDestroyWindow(display, frame);
+        }
     }
 
-    /* Shift remaining entries left */
     for (size_t j = (size_t)idx; j < client_count - 1; ++j)
         managed_clients[j] = managed_clients[j + 1];
     --client_count;
@@ -249,16 +248,19 @@ void WM_WindowHandler_RunLoop(Display *dpy) {
         case MapRequest: {
             Window client = event.xmaprequest.window;
             if (!WindowExists(display, client)) break;
-
+        
             if (WM_Window_IsDecoratable(display, client)) {
                 if (FindFrame(client) == None) {
+                    // Sync before framing so client has reported its real size
+                    XSync(display, False);
                     Window frame = WM_Window_CreateFrame(display, client);
                     if (frame) {
-                        WM_Window_MapWindow(display, frame);
                         AddClient(client, frame);
+                        // Map frame last — client is already mapped inside CreateFrame
+                        XMapWindow(display, frame);
+                        XMapRaised(display, frame);
                     }
                 } else {
-                    /* Frame exists — just make sure client is mapped */
                     XWindowAttributes attr;
                     if (XGetWindowAttributes(display, client, &attr) &&
                         attr.map_state == IsUnmapped)
@@ -268,7 +270,7 @@ void WM_WindowHandler_RunLoop(Display *dpy) {
                 AddClient(client, None);
                 WM_Window_MapWindow(display, client);
             }
-
+        
             XSetInputFocus(display, client, RevertToPointerRoot, CurrentTime);
             focused_window = client;
             break;

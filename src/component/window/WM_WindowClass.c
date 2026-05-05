@@ -177,10 +177,19 @@ static ManagedWindow *FindByClient(Window client) {
 static void RemoveManagedWindow(Display *dpy, ManagedWindow *mw) {
     if (!mw) return;
 
-    /* Unmap/destroy title bar and frame — NOT the client (it closes itself) */
-    XUnmapWindow(dpy, mw->title_bar);
-    XDestroyWindow(dpy, mw->title_bar);
-    XDestroyWindow(dpy, mw->frame);
+    // Grab X errors silently during cleanup — window may already be gone
+    XSync(dpy, False);
+
+    // Only destroy title bar and frame if they still exist
+    XWindowAttributes attr;
+    if (XGetWindowAttributes(dpy, mw->title_bar, &attr)) {
+        XUnmapWindow(dpy, mw->title_bar);
+        XDestroyWindow(dpy, mw->title_bar);
+    }
+    if (XGetWindowAttributes(dpy, mw->frame, &attr)) {
+        XUnmapWindow(dpy, mw->frame);
+        XDestroyWindow(dpy, mw->frame);
+    }
 
     free(mw->title_string);
 
@@ -190,7 +199,7 @@ static void RemoveManagedWindow(Display *dpy, ManagedWindow *mw) {
         p = &(*p)->next;
     }
     free(mw);
-    XFlush(dpy);
+    XSync(dpy, False);
 }
 
 /* ------------------------------------------------------------------ */
